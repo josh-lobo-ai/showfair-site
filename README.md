@@ -26,7 +26,17 @@ powershell -ExecutionPolicy Bypass -File deploy.ps1 -Source "C:\caminho\para\bui
 ```
 Se o arquivo for um **fragmento de artifact** (começa com `<title>`/`<style>`, sem `<!doctype>`), o script **envelopa automaticamente** com `head.tmpl.html` (charset UTF-8, viewport, título, meta OG). Se já for um documento HTML completo, publica como está.
 
-O `deploy.ps1` faz: envelopa (se preciso) → stage **explícito** de `index.html`/`CNAME`/`.nojekyll` (nunca `git add -A`) → commit → `pull --rebase` → `push origin main`.
+O `deploy.ps1` faz: `pull --rebase` (sincroniza) → envelopa (se preciso) → **trava anti-stale** → stage **explícito** de `index.html`/`CNAME`/`.nojekyll`/`.deploy-meta.json` (nunca `git add -A`) → commit → `pull --rebase` → `push origin main`.
+
+## Segurança / múltiplas sessões (não perder, não sobrescrever)
+Garantias da rota quando há várias sessões atuando:
+1. **Nada publicado se perde.** Todo deploy é 1 commit. O histórico do git guarda **todas** as versões — qualquer uma volta com `git checkout <sha> -- index.html`.
+2. **Não sobrescreve build novo com build velho.** O `deploy.ps1` grava em `.deploy-meta.json` a data do build publicado. Se alguém tentar importar (`-Source`) um build **mais antigo** que o último, o script **aborta** e avisa. Só passa com `-Force` (uso consciente).
+3. **Não varre WIP de outra sessão.** Stage é **explícito** (só os arquivos do site), nunca `git add -A`.
+4. **Não diverge do remoto.** O script faz `pull --rebase` antes e depois; se outra sessão publicou nesse meio, ele reconcilia em vez de derrubar.
+5. **Cuidado com o efêmero.** Builds em `scratchpad` de sessões são temporários. Regra: **assim que melhorar o site, publique** (`deploy.ps1`) — aí o trabalho entra no git e fica salvo. Não deixe a única cópia no scratchpad.
+
+**Fonte da verdade = `index.html` deste repo.** Editar aqui e publicar é o caminho mais seguro (cada mudança já vira backup no git).
 
 ## Bootstrap numa máquina nova
 ```

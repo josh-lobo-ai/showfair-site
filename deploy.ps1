@@ -3,25 +3,55 @@
 #   Editar direto o index.html do repo e publicar:
 #     powershell -ExecutionPolicy Bypass -File deploy.ps1
 #   Importar um build novo (ex: HTML gerado por um artifact/outra sessao) e publicar:
-#     powershell -ExecutionPolicy Bypass -File deploy.ps1 -Source "C:\caminho\para\build.html"
-# Fragmentos de artifact (sem <!doctype>) sao envelopados automaticamente com head.tmpl.html.
-# Deploy = push na branch main -> GitHub Pages publica em ~30s -> https://www.showfair.com.br/
+#     powershell -ExecutionPolicy Bypass -File deploy.ps1 -Source "C:\caminho\build.html"
+#   Forcar publicacao mesmo que o build seja mais antigo que o ultimo:
+#     powershell -ExecutionPolicy Bypass -File deploy.ps1 -Source "..." -Force
+#
+# Seguranca embutida:
+#  - Sincroniza com o remoto ANTES e DEPOIS (pull --rebase) -> nao diverge de outra sessao.
+#  - Stage EXPLICITO (nunca 'git add -A') -> nao varre WIP de sessao paralela.
+#  - TRAVA ANTI-STALE: recusa importar um build mais ANTIGO que o ultimo publicado (a nao ser com -Force).
+#  - Todo deploy vira 1 commit -> historico do git = backup; nada publicado se perde.
+# Deploy = push na main -> GitHub Pages -> https://www.showfair.com.br/
 
 param(
   [string]$Source  = "",
-  [string]$Message = ""
+  [string]$Message = "",
+  [switch]$Force
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $enc  = New-Object System.Text.UTF8Encoding($false)
+$metaPath = Join-Path $repo ".deploy-meta.json"
 
 function ReadUtf8([string]$p) {
   [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($p))
 }
 
-# 1. Import opcional de um build novo -> vira index.html
+# 0. Sincroniza com o remoto ANTES de mexer (pega o estado mais novo; nao perde deploy de outra sessao)
+git -C $repo pull --rebase --autostash origin main 2>&1 | Out-Null
+
+# 1. Import opcional de um build novo -> vira index.html (com trava anti-stale)
 if ($Source -ne "") {
   if (-not (Test-Path $Source)) { throw "Source nao encontrado: $Source" }
+  $srcItem  = Get-Item $Source
+  $newTicks = $srcItem.LastWriteTimeUtc.Ticks
+
+  # TRAVA ANTI-STALE: nao deixa um build velho sobrescrever um mais novo ja publicado
+  if ((Test-Path $metaPath) -and -not $Force) {
+    $meta = ReadUtf8 $metaPath | ConvertFrom-Json
+    if ($meta.sourceTicks) {
+      $lastTicks = [int64]::Parse($meta.sourceTicks)
+      if ($newTicks -lt $lastTicks) {
+        Write-Host "ABORTADO (trava anti-stale): o build informado e MAIS ANTIGO que o ultimo publicado."
+        Write-Host ("  ultimo publicado: " + $meta.sourceMtime + "   " + $meta.sourcePath)
+        Write-Host ("  build informado:  " + $srcItem.LastWriteTime + "   " + $Source)
+        Write-Host "  Se tem CERTEZA que quer sobrescrever com o mais antigo, rode de novo com -Force."
+        return
+      }
+    }
+  }
+
   $raw = ReadUtf8 $Source
   if ($raw -match '(?is)<!doctype|<html[\s>]') {
     $doc = $raw
@@ -33,22 +63,31 @@ if ($Source -ne "") {
     $doc  = $head + $raw + "`r`n</body>`r`n</html>`r`n"
   }
   [System.IO.File]::WriteAllText((Join-Path $repo "index.html"), $doc, $enc)
-  Write-Host "Importado de: $Source"
+
+  # registra a proveniencia deste deploy (usado pela trava anti-stale no proximo)
+  $metaObj = [ordered]@{
+    sourcePath  = $Source
+    sourceMtime = $srcItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+    sourceTicks = "$newTicks"
+    deployedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  }
+  [System.IO.File]::WriteAllText($metaPath, ($metaObj | ConvertTo-Json), $enc)
+  Write-Host ("Importado de: " + $Source + "  (build de " + $srcItem.LastWriteTime + ")")
 }
 
 # 2. Garante arquivos de infra (dominio + sem jekyll)
 if (-not (Test-Path (Join-Path $repo "CNAME")))     { [System.IO.File]::WriteAllText((Join-Path $repo "CNAME"), "www.showfair.com.br", $enc) }
 if (-not (Test-Path (Join-Path $repo ".nojekyll"))) { [System.IO.File]::WriteAllText((Join-Path $repo ".nojekyll"), "", $enc) }
 
-# 3. Stage EXPLICITO (nunca 'git add -A' - lição do youni: nao varrer WIP de outra sessao)
-git -C $repo add -- index.html CNAME .nojekyll
-$pending = git -C $repo status --porcelain -- index.html CNAME .nojekyll
+# 3. Stage EXPLICITO (nunca 'git add -A' - nao varrer WIP de sessao paralela)
+git -C $repo add -- index.html CNAME .nojekyll .deploy-meta.json
+$pending = git -C $repo status --porcelain -- index.html CNAME .nojekyll .deploy-meta.json
 if (-not $pending) { Write-Host "Nada mudou no site. Nada a publicar."; return }
 
-# 4. Commit + sincroniza + push
+# 4. Commit + sincroniza de novo (concorrencia) + push
 if ($Message -eq "") { $Message = "deploy: atualiza site institucional showfair" }
 git -C $repo commit -m $Message | Out-Null
-git -C $repo pull --rebase --autostash origin main | Out-Null
+git -C $repo pull --rebase --autostash origin main 2>&1 | Out-Null
 git -C $repo push origin main
 
 Write-Host ""
