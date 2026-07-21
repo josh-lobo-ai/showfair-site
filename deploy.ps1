@@ -19,7 +19,9 @@ param(
   [string]$Message = "",
   [switch]$Force
 )
-$ErrorActionPreference = "Stop"
+# Continue (nao Stop): git escreve infos no stderr que, com Stop, viram erro fatal no PS 5.1.
+# Erros reais de arquivo (.NET) e 'throw' continuam abortando; git checamos por $LASTEXITCODE.
+$ErrorActionPreference = "Continue"
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $enc  = New-Object System.Text.UTF8Encoding($false)
 $metaPath = Join-Path $repo ".deploy-meta.json"
@@ -27,9 +29,13 @@ $metaPath = Join-Path $repo ".deploy-meta.json"
 function ReadUtf8([string]$p) {
   [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($p))
 }
+function GitOrDie([string[]]$gitArgs, [string]$erro) {
+  & git -C $repo @gitArgs | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "$erro (git saiu com $LASTEXITCODE)" }
+}
 
 # 0. Sincroniza com o remoto ANTES de mexer (pega o estado mais novo; nao perde deploy de outra sessao)
-git -C $repo pull --rebase --autostash origin main 2>&1 | Out-Null
+& git -C $repo pull --rebase --autostash origin main | Out-Null
 
 # 1. Import opcional de um build novo -> vira index.html (com trava anti-stale)
 if ($Source -ne "") {
@@ -80,15 +86,17 @@ if (-not (Test-Path (Join-Path $repo "CNAME")))     { [System.IO.File]::WriteAll
 if (-not (Test-Path (Join-Path $repo ".nojekyll"))) { [System.IO.File]::WriteAllText((Join-Path $repo ".nojekyll"), "", $enc) }
 
 # 3. Stage EXPLICITO (nunca 'git add -A' - nao varrer WIP de sessao paralela)
-git -C $repo add -- index.html CNAME .nojekyll .deploy-meta.json
-$pending = git -C $repo status --porcelain -- index.html CNAME .nojekyll .deploy-meta.json
+$toStage = @('index.html','CNAME','.nojekyll')
+if (Test-Path $metaPath) { $toStage += '.deploy-meta.json' }
+& git -C $repo add -- $toStage
+$pending = & git -C $repo status --porcelain -- $toStage
 if (-not $pending) { Write-Host "Nada mudou no site. Nada a publicar."; return }
 
 # 4. Commit + sincroniza de novo (concorrencia) + push
 if ($Message -eq "") { $Message = "deploy: atualiza site institucional showfair" }
-git -C $repo commit -m $Message | Out-Null
-git -C $repo pull --rebase --autostash origin main 2>&1 | Out-Null
-git -C $repo push origin main
+GitOrDie @('commit','-m',$Message) "commit falhou"
+& git -C $repo pull --rebase --autostash origin main | Out-Null
+GitOrDie @('push','origin','main') "push falhou"
 
 Write-Host ""
 Write-Host "Publicado. GitHub Pages vai reconstruir em ~30s."
