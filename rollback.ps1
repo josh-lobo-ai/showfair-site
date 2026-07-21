@@ -27,10 +27,11 @@ if ($To -eq "") {
   Write-Host ""
   Write-Host "HISTORICO DE DEPLOYS (mais recente no topo; << NO AR marca o publicado):"
   Write-Host ("-" * 78)
-  $log = & git -C $repo log -n $List --date=format:'%d/%m %H:%M' --format='%h|%ad|%s' -- index.html
-  foreach ($line in $log) {
-    $p = $line -split '\|', 3
-    $mark = if ($p[0] -eq $head) { "  << NO AR" } else { "" }
+  # o topo (commit mais recente que tocou index.html) e sempre o que esta servindo no ar
+  $log = @(& git -C $repo log -n $List --date=format:'%d/%m %H:%M' --format='%h|%ad|%s' -- index.html)
+  for ($i = 0; $i -lt $log.Count; $i++) {
+    $p = $log[$i] -split '\|', 3
+    $mark = if ($i -eq 0) { "  << NO AR" } else { "" }
     Write-Host ("{0}  {1}  {2}{3}" -f $p[0], $p[1], $p[2], $mark)
   }
   Write-Host ("-" * 78)
