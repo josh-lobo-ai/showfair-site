@@ -1,0 +1,56 @@
+name: Injeta captura de cadastros
+
+# Toda vez que alguém der push no index.html (inclusive quando outra sessão
+# regenera o site do zero e remove a ligação), este robô re-injeta o script de
+# captura antes do </body> se ele estiver ausente. Idempotente: se já estiver lá,
+# não faz nada. Pushes do próprio robô (GITHUB_TOKEN) NÃO disparam o workflow de
+# novo (proteção nativa do GitHub contra loop).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: inject-capture
+  cancel-in-progress: false
+
+jobs:
+  inject:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Re-injeta o script de captura se ausente
+        run: |
+          set -e
+          MARK="admin.showfair.com.br/api/register"
+          if grep -qF "$MARK" index.html; then
+            echo "Captura já presente — nada a fazer."
+            exit 0
+          fi
+          echo "Captura ausente — re-injetando…"
+          node -e '
+            const fs = require("fs");
+            let idx = fs.readFileSync("index.html", "utf8");
+            const snip = fs.readFileSync(".github/capture-snippet.html", "utf8");
+            if (idx.includes("admin.showfair.com.br/api/register")) process.exit(0);
+            if (/<\/body>/i.test(idx)) {
+              idx = idx.replace(/<\/body>/i, snip + "\n</body>");
+            } else {
+              idx = idx + "\n" + snip + "\n";
+            }
+            fs.writeFileSync("index.html", idx);
+            console.log("Snippet injetado.");
+          '
+          git config user.name "showfair-capture-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "chore: re-injeta script de captura de cadastros [auto]"
+          # Rebase defensivo caso outra sessão tenha empurrado no meio-tempo.
+          git pull --rebase origin main || true
+          git push
