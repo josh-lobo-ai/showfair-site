@@ -2617,7 +2617,9 @@
   })();
 </script>
 
-<!-- === CAPTURA DE CADASTROS → console admin (ADITIVO: não altera a lógica/UX existente) === -->
+<!-- === CAPTURA DE CADASTROS → console admin (ADITIVO: não altera a lógica/UX existente) ===
+     Re-injetado automaticamente pelo workflow .github/workflows/inject-capture.yml
+     sempre que uma regeneração do index.html o remover. Fonte da verdade = este arquivo. -->
 <script>
 (function () {
   "use strict";
@@ -2696,6 +2698,39 @@
       } catch (e) {}
     });
   })();
+})();
+
+// === RASTREIO ANÔNIMO DE CLIQUES EM CTAs → /api/track (funil; sem PII) ===
+(function () {
+  var TRACK = "https://admin.showfair.com.br/api/track";
+  var ultimo = {};
+  document.addEventListener(
+    "click",
+    function (e) {
+      try {
+        var el =
+          e.target && e.target.closest
+            ? e.target.closest(".btn-acao, [data-open], .cupom-corner, a.store")
+            : null;
+        if (!el) return;
+        var label = String(el.getAttribute("aria-label") || el.textContent || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 60);
+        if (!label) return;
+        var now = Date.now();
+        if (ultimo[label] && now - ultimo[label] < 400) return; // evita duplo-disparo
+        ultimo[label] = now;
+        fetch(TRACK, {
+          method: "POST",
+          headers: { "content-type": "text/plain;charset=UTF-8" },
+          body: JSON.stringify({ label: label, path: location.hash || location.pathname }),
+          keepalive: true,
+        }).catch(function () {});
+      } catch (e2) {}
+    },
+    true // capture phase → pega antes de qualquer stopPropagation
+  );
 })();
 </script>
 
