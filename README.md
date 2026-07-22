@@ -1,6 +1,16 @@
-# showfair-site — site institucional (externo)
+# showfair-site — 🛑 DEPRECATED (não é mais o site público)
 
-Site institucional **público/externo** da Show Fair. No ar em **https://www.showfair.com.br** via **GitHub Pages**.
+> **PARE. Este repo NÃO serve mais www.showfair.com.br.** Desde o corte de DNS de 22/07/2026, o site público é o **`showfair-web`** (Next.js/Vercel — `C:\dev\showfair-web`). O DNS aponta o `www` só pra Vercel; **publicar aqui (via `deploy.ps1`) NÃO aparece pra ninguém.**
+>
+> - Para editar/deployar o site público: use **`showfair-web`** e leia `showfair-web/docs/ARQUITETURA.md` antes de tocar.
+> - Este repo fica só como **backup/rollback de emergência do DNS** (o `index.html` legado). Não editar, não deployar, não rodar `deploy.ps1` aqui.
+> - O workflow `inject-capture.yml` foi desligado (renomeado `.disabled`).
+
+---
+
+*(Histórico — conteúdo abaixo é da época em que este repo era o site público, mantido só para referência.)*
+
+Site institucional **público/externo** da Show Fair. Foi o site em **https://www.showfair.com.br** via **GitHub Pages** até 22/07/2026.
 
 > ⚠️ Não confundir com o Show Fair do **youni.my**, que é o acervo **interno** (atrás de login). Aquele é interno; **este repo é o site público institucional**.
 
