@@ -3384,5 +3384,110 @@
   })();
 </script>
 
+<!-- === CAPTURA DE CADASTROS → console admin (ADITIVO: não altera a lógica/UX existente) ===
+     Re-injetado automaticamente pelo workflow .github/workflows/inject-capture.yml
+     sempre que uma regeneração do index.html o remover. Fonte da verdade = este arquivo. -->
+<script>
+(function () {
+  "use strict";
+  var ENDPOINT = "https://admin.showfair.com.br/api/register";
+  var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  var enviados = {};
+  function val(id) {
+    var el = document.getElementById(id);
+    return el && el.value ? String(el.value).trim() : "";
+  }
+  function segSel(id) {
+    var el = document.querySelector(
+      "#" + id + " .sel, #" + id + " .on, #" + id + ' [aria-pressed="true"]'
+    );
+    return el ? String(el.getAttribute("data-v") || el.textContent || "").trim() : "";
+  }
+  function digits(s) { return String(s || "").replace(/\D/g, ""); }
+  function enviar(payload) {
+    try {
+      var temId = !!(payload.whatsapp || payload.email);
+      var janela = temId ? 60000 : 2500;
+      var sig = [payload.tipo, payload.whatsapp || "", payload.email || "", payload.cidade || ""].join("|");
+      var now = Date.now();
+      if (enviados[sig] && now - enviados[sig] < janela) return;
+      enviados[sig] = now;
+      fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "text/plain;charset=UTF-8" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function hook(id, build) {
+    var btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      try { var p = build(); if (p) enviar(p); } catch (e) {}
+    });
+  }
+  hook("sm-send", function () {
+    var nome = val("sm-nome"), wpp = digits(val("sm-wpp")), cidade = val("sm-cidade"), veic = segSel("sm-veic");
+    if (!nome || wpp.length < 10 || !cidade) return null;
+    return { tipo: "motorista", nome: nome, whatsapp: wpp, cidade: cidade, categoria: veic, origem: "site-motorista" };
+  });
+  hook("cc-send", function () {
+    var cidade = val("cc-cidade");
+    if (!cidade) return null;
+    var tipo = (segSel("cc-perfil") || "passageiro") === "motorista" ? "motorista" : "passageiro";
+    var wpp = digits(val("cc-wpp"));
+    if (tipo === "motorista" && wpp.length < 10) return null;
+    var p = { tipo: tipo, cidade: cidade, origem: "site-cidade" };
+    if (wpp.length >= 10) p.whatsapp = wpp;
+    return p;
+  });
+  hook("rd-send", function () {
+    var nome = val("rd-nome"), tel = digits(val("rd-tel")), email = val("rd-email");
+    if (!nome || tel.length < 10 || !EMAIL_RE.test(email)) return null;
+    return { tipo: "passageiro", nome: nome, whatsapp: tel, email: email, categoria: "cupom", origem: "site-cupom" };
+  });
+  // MOTORISTA INLINE (#m-cadastro): form com ids cad-* (nome/whatsapp/cidade + segmentado de veículo #cad-veic).
+  hook("cad-send", function () {
+    var nome = val("cad-nome"), wpp = digits(val("cad-wpp")), cidade = val("cad-cidade"), veic = segSel("cad-veic");
+    if (!nome || wpp.length < 10 || !cidade) return null;
+    return { tipo: "motorista", nome: nome, whatsapp: wpp, cidade: cidade, categoria: veic, origem: "site-motorista-inline" };
+  });
+})();
+
+// === RASTREIO ANÔNIMO DE CLIQUES EM CTAs → /api/track (funil; sem PII) ===
+(function () {
+  var TRACK = "https://admin.showfair.com.br/api/track";
+  var ultimo = {};
+  document.addEventListener(
+    "click",
+    function (e) {
+      try {
+        var el =
+          e.target && e.target.closest
+            ? e.target.closest(".btn-acao, [data-open], .cupom-corner, a.store")
+            : null;
+        if (!el) return;
+        var label = String(el.getAttribute("aria-label") || el.textContent || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 60);
+        if (!label) return;
+        var now = Date.now();
+        if (ultimo[label] && now - ultimo[label] < 400) return; // evita duplo-disparo
+        ultimo[label] = now;
+        fetch(TRACK, {
+          method: "POST",
+          headers: { "content-type": "text/plain;charset=UTF-8" },
+          body: JSON.stringify({ label: label, path: location.hash || location.pathname }),
+          keepalive: true,
+        }).catch(function () {});
+      } catch (e2) {}
+    },
+    true // capture phase → pega antes de qualquer stopPropagation
+  );
+})();
+</script>
+
 </body>
 </html>
