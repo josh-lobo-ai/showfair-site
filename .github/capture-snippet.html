@@ -61,24 +61,12 @@
     if (!nome || tel.length < 10 || !EMAIL_RE.test(email)) return null;
     return { tipo: "passageiro", nome: nome, whatsapp: tel, email: email, categoria: "cupom", origem: "site-cupom" };
   });
-  // MOTORISTA INLINE (#m-cadastro): campos sem id — seleciona por escopo do form.
-  (function () {
-    var btn = document.querySelector('#m-cadastro button[type="button"]');
-    if (!btn) return;
-    function q(sel) {
-      var el = document.querySelector("#m-cadastro " + sel);
-      return el && el.value ? String(el.value).trim() : "";
-    }
-    btn.addEventListener("click", function () {
-      try {
-        var nome = q('input[type="text"]'), wpp = digits(q('input[type="tel"]'));
-        if (!nome || wpp.length < 10) return;
-        var veic = q('select[aria-label="Seu veículo"]'); if (veic === "Seu veículo") veic = "";
-        var cidade = q('select[aria-label="Sua cidade"]'); if (cidade === "Sua cidade") cidade = "";
-        enviar({ tipo: "motorista", nome: nome, whatsapp: wpp, cidade: cidade, categoria: veic, origem: "site-motorista-inline" });
-      } catch (e) {}
-    });
-  })();
+  // MOTORISTA INLINE (#m-cadastro): form com ids cad-* (nome/whatsapp/cidade + segmentado de veículo #cad-veic).
+  hook("cad-send", function () {
+    var nome = val("cad-nome"), wpp = digits(val("cad-wpp")), cidade = val("cad-cidade"), veic = segSel("cad-veic");
+    if (!nome || wpp.length < 10 || !cidade) return null;
+    return { tipo: "motorista", nome: nome, whatsapp: wpp, cidade: cidade, categoria: veic, origem: "site-motorista-inline" };
+  });
 })();
 
 // === RASTREIO ANÔNIMO DE CLIQUES EM CTAs → /api/track (funil; sem PII) ===
